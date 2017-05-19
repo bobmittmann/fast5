@@ -28,7 +28,7 @@
 
 #define __FAST5_I__
 
-#define DEBUG_LEVEL DBG_INFO
+#define DEBUG_LEVEL DBG_TRACE
 #include "fast5-i.h"
 #include <assert.h>
 #include <fast5.h>
@@ -64,7 +64,7 @@ struct fast5 * fast5_open(const char * path)
 	H5Aread(attr, H5T_NATIVE_FLOAT, &ver);
 	H5Aclose(attr);
 
-	DBG(DBG_TRACE, "file_version = %0f", ver);
+	DBG(DBG_INFO, "file_version = %0f", ver);
 
 	if ((f5 = (struct fast5 *)malloc(sizeof(struct fast5))) != NULL) {
 		f5->file = file;
@@ -90,14 +90,14 @@ struct fast5 * fast5_open(const char * path)
 
 	/* Check if group /Sequences exists in the file. */
 	if (H5Lexists(file, "/Sequences", H5P_DEFAULT) <= 0) {
-		DBG(DBG_TRACE, "Group \"/Sequences\" not found!");
+		DBG(DBG_INFO, "Group \"/Sequences\" not found!");
 		f5->has_sequences = true;
 	} else
 		f5->has_sequences = false;
 
 	/* Check if group /Raw exists in the file. */
 	if (H5Lexists(file, "/Raw", H5P_DEFAULT) <= 0) {
-		DBG(DBG_TRACE, "Group \"/Raw\" not found!");
+		DBG(DBG_INFO, "Group \"/Raw\" not found!");
 		f5->has_raw = true;
 	} else
 		f5->has_raw = false;
@@ -127,6 +127,9 @@ int fast5_info(struct fast5 * f5, struct fast5_info * info)
 	return 0;
 }
 
+/* -------------------------------------------------------------------------
+ * Raw signals
+ * ------------------------------------------------------------------------- */ 
 
 /* Get the link name for the raw reads group */
 static int fast5_raw_get_name(struct fast5 * f5, char * name)
@@ -176,21 +179,25 @@ int fast5_raw_read_info(struct fast5 * f5, struct fast5_raw * info)
 {
 	char gpath[FAST5_OBJ_PATH_MAX];
 	char name[FAST5_OBJ_PATH_MAX];
+	hid_t dataset;  
+	hid_t dspace;
 	hid_t group;
 	hid_t attr;
+	hsize_t dims[16];
+	int ndims;
 	int ret;
 
 	assert(f5 != NULL);
 	assert(f5->file >= 0);
 	assert(info != NULL);
 
+	memset(info, 0, sizeof(struct fast5_raw));
+
 	if ((ret = fast5_raw_get_name(f5, name)) < 0)
 		return ret;
 
-	memset(info, 0, sizeof(struct fast5_raw));
-
-	snprintf(info->path, FAST5_OBJ_PATH_MAX, "/Raw/Reads/%s/Signal", name);
-	DBG(DBG_TRACE, "Raw signal: %s", info->path);
+	snprintf(info->dataset, FAST5_OBJ_PATH_MAX, "/Raw/Reads/%s/Signal", name);
+	DBG(DBG_INFO, "Raw signal: %s", info->dataset);
 
 	snprintf(gpath, FAST5_OBJ_PATH_MAX, "/Raw/Reads/%s", name);
 	if ((group = H5Gopen(f5->file, gpath, H5P_DEFAULT)) < 0) {
@@ -234,10 +241,87 @@ int fast5_raw_read_info(struct fast5 * f5, struct fast5_raw * info)
 		H5Aclose(attr);
 	}
 
+	/* Open dataset. */
+	dataset = H5Dopen2(f5->file, info->dataset, H5P_DEFAULT);
+	/* GEt the dataset's dataspace. */
+	dspace = H5Dget_space(dataset);
+	/* Get dimensions */
+	ndims = H5Sget_simple_extent_ndims(dspace);
+	H5Sget_simple_extent_dims(dspace, dims, NULL);
+	DBG(DBG_INFO, "ndims=%d dims[0]=%d", ndims, (int)dims[0]);
+
+	info->length = dims[0];
+
+	/* Close the dataspace. */
+	H5Sclose(dspace);  
+	/* Close the dataset. */
+	H5Dclose(dataset);
+
 	H5Gclose(group);
 
 	return 0;
 }
+
+int fast5_raw_read(struct fast5 * f5, int16_t * raw, size_t len)
+{
+	char name[FAST5_OBJ_PATH_MAX];
+	char path[FAST5_OBJ_PATH_MAX];
+	hid_t dataset;  
+	herr_t status;
+	hid_t dataspace_id;
+	hid_t memspace_id;
+	hsize_t dimsm[2];
+	hsize_t count[2];              /* size of subset in the file */
+	hsize_t offset[2];             /* subset offset in the file */
+	hsize_t stride[2];
+	hsize_t block[2];
+	int ret;
+
+	assert(f5 != NULL);
+	assert(f5->file >= 0);
+	assert(raw != NULL);
+
+	if ((ret = fast5_raw_get_name(f5, name)) < 0)
+		return ret;
+
+	snprintf(path, FAST5_OBJ_PATH_MAX, "/Raw/Reads/%s/Signal", name);
+	DBG(DBG_INFO, "Raw signal: %s", path);
+
+	/* Open an existing dataset. */
+	dataset = H5Dopen2(f5->file, path, H5P_DEFAULT);
+
+	/* Specify size and shape of subset to write. */
+
+	offset[0] = 0;
+	count[0]  = len;
+	stride[0] = 1;
+	block[0] = 1;
+
+	/* Create memory space with size of subset. Get file dataspace
+	   and select subset from file dataspace. */
+
+	dimsm[0] = len;
+	memspace_id = H5Screate_simple(1, dimsm, NULL);
+
+	dataspace_id = H5Dget_space(dataset);
+	H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET, 
+						offset, stride, count, block);
+
+	status = H5Dread(dataset, H5T_NATIVE_SHORT, 
+					 memspace_id, dataspace_id, 
+					 H5P_DEFAULT, raw);
+
+	H5Sclose(memspace_id);
+	H5Sclose(dataspace_id);
+	/* Close the dataset. */
+	H5Dclose(dataset);
+
+	return status;
+}
+
+/* -------------------------------------------------------------------------
+ * Events detection
+ * ------------------------------------------------------------------------- */ 
 
 /* Get the link name for the events detection reads group */
 static int fast5_events_read_dirname(struct fast5 * f5, char * path)
@@ -248,8 +332,6 @@ static int fast5_events_read_dirname(struct fast5 * f5, char * path)
 	hid_t group;
 	int i;
 
-	DBG(DBG_TRACE, "1.");
-
 	/* Check if group /Analyses/Reads exists in the file. */
 	if (H5Lexists(f5->file, "/Analyses", H5P_DEFAULT) <= 0) {
 		DBG(DBG_WARNING, "Group \"Analyses\" don't exist!");
@@ -257,8 +339,6 @@ static int fast5_events_read_dirname(struct fast5 * f5, char * path)
 	}
 
 	sprintf(dir, "/Analyses/%s", "EventDetection_000");
-
-	DBG(DBG_TRACE, "2.");
 
 	/* Check if group /Analyses/EventDetection_000 exists in the file. */
 	if (H5Lexists(f5->file, dir, H5P_DEFAULT) <= 0) {
@@ -268,20 +348,17 @@ static int fast5_events_read_dirname(struct fast5 * f5, char * path)
 
 	strcat(dir, "/Reads");
 
-	DBG(DBG_TRACE, "3.");
 	/* Check if group /Analysis/EventDetection_000/Reads exists in the file. */
 	if (H5Lexists(f5->file, dir, H5P_DEFAULT) <= 0) {
 		DBG(DBG_WARNING, "Group \"%s\" don't exist!", dir);
 		return -1;
 	}
 
-	DBG(DBG_TRACE, "4.");
 	if ((group = H5Gopen(f5->file, dir, H5P_DEFAULT)) < 0) {
 		DBG(DBG_WARNING, "Can't access group \"%s\"!", dir);
 		return group;
 	}
 
-	DBG(DBG_TRACE, "5.");
 	H5Gget_info(group, &ginfo);
 
 	if (ginfo.nlinks == 0) {
@@ -295,13 +372,10 @@ static int fast5_events_read_dirname(struct fast5 * f5, char * path)
 
 	i = 0;
 
-	DBG(DBG_TRACE, "6.");
 	H5Lget_name_by_idx(group, ".", H5_INDEX_NAME, H5_ITER_INC, i, 
 					   name, FAST5_OBJ_PATH_MAX, H5P_DEFAULT);
 
 	sprintf(path, "%s/%s", dir, name);
-
-	DBG(DBG_TRACE, "path=\"%s\"", path);
 
 	H5Gclose(group);
 
@@ -311,21 +385,25 @@ static int fast5_events_read_dirname(struct fast5 * f5, char * path)
 int fast5_events_info(struct fast5 * f5, struct fast5_events_info * info)
 {
 	char path[FAST5_OBJ_PATH_MAX];
+	hid_t dataset;  
+	hid_t dspace;
 	hid_t group;
 	hid_t attr;
+	hsize_t dims[16];
+	int ndims;
 	int ret;
 
 	assert(f5 != NULL);
 	assert(f5->file >= 0);
 	assert(info != NULL);
 
+	memset(info, 0, sizeof(struct fast5_events_info));
+
 	if ((ret = fast5_events_read_dirname(f5, path)) < 0)
 		return ret;
 
-	memset(info, 0, sizeof(struct fast5_raw));
-
-	snprintf(info->path, FAST5_OBJ_PATH_MAX, "%s/Events", path);
-	DBG(DBG_TRACE, "Event detection events: %s", info->path);
+	snprintf(info->dataset, FAST5_OBJ_PATH_MAX, "%s/Events", path);
+	DBG(DBG_INFO, "Event detection events: %s", info->dataset);
 
 	if ((group = H5Gopen(f5->file, path, H5P_DEFAULT)) < 0) {
 		DBG(DBG_WARNING, "Cant open \"%s\" group!", path);
@@ -373,7 +451,94 @@ int fast5_events_info(struct fast5 * f5, struct fast5_events_info * info)
 
 	H5Gclose(group);
 
+	/* Open dataset. */
+	dataset = H5Dopen2(f5->file, info->dataset, H5P_DEFAULT);
+	/* GEt the dataset's dataspace. */
+	dspace = H5Dget_space(dataset);
+	/* Get dimensions */
+	ndims = H5Sget_simple_extent_ndims(dspace);
+	H5Sget_simple_extent_dims(dspace, dims, NULL);
+	DBG(DBG_INFO, "ndims=%d dims[0]=%d", ndims, (int)dims[0]);
+
+	info->length = dims[0];
+
+	/* Close the dataspace. */
+	H5Sclose(dspace);  
+	/* Close the dataset. */
+	H5Dclose(dataset);
+
 	return 0;
+}
+
+int fast5_events_read(struct fast5 * f5, struct fast5_event * event, 
+					  size_t len)
+{
+	char path[FAST5_OBJ_PATH_MAX];
+	char datasetname[FAST5_OBJ_PATH_MAX];
+	hid_t dataset;  
+	herr_t status;
+	hid_t dataspace_id;
+	hid_t memspace_id;
+	hsize_t dimsm[2];
+	hsize_t count[2];              /* size of subset in the file */
+	hsize_t offset[2];             /* subset offset in the file */
+	hsize_t stride[2];
+	hsize_t block[2];
+	hid_t type;
+	int ret;
+
+	assert(f5 != NULL);
+	assert(f5->file >= 0);
+	assert(event != NULL);
+
+	if ((ret = fast5_events_read_dirname(f5, path)) < 0)
+		return ret;
+
+	snprintf(datasetname, FAST5_OBJ_PATH_MAX, "%s/Events", path);
+
+	/* Open dataset. */
+	dataset = H5Dopen2(f5->file, datasetname, H5P_DEFAULT);
+
+	/* Specify size and shape of subset to read. */
+	offset[0] = 0;
+	count[0]  = len;
+	stride[0] = 1;
+	block[0] = 1;
+
+	/*
+	 * Create the memory data type.
+	 */
+	type = H5Tcreate(H5T_COMPOUND, sizeof(struct fast5_event));
+	H5Tinsert(type, "start", HOFFSET(struct fast5_event, start), 
+			  H5T_NATIVE_LLONG);
+	H5Tinsert(type, "length", HOFFSET(struct fast5_event, length), 
+			  H5T_NATIVE_LLONG);
+	H5Tinsert(type, "mean", HOFFSET(struct fast5_event, mean), 
+			  H5T_NATIVE_DOUBLE);
+	H5Tinsert(type, "stdv", HOFFSET(struct fast5_event, stdv), 
+			  H5T_NATIVE_DOUBLE);
+	H5Tinsert(type, "variance", HOFFSET(struct fast5_event, variance), 
+			  H5T_NATIVE_DOUBLE);
+
+	/* Create memory space with size of subset. Get file dataspace
+	   and select subset from file dataspace. */
+	dimsm[0] = len;
+	memspace_id = H5Screate_simple(1, dimsm, NULL);
+
+	dataspace_id = H5Dget_space(dataset);
+	H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET, 
+						offset, stride, count, block);
+
+	status = H5Dread(dataset, type, 
+					 memspace_id, dataspace_id, 
+					 H5P_DEFAULT, event);
+
+	H5Sclose(memspace_id);
+	H5Sclose(dataspace_id);
+	/* Close the dataset. */
+	H5Dclose(dataset);
+
+	return status;
 }
 
 int fast5_channel_id(struct fast5 * f5, struct fast5_channel_id * info)
@@ -433,62 +598,6 @@ int fast5_channel_id(struct fast5 * f5, struct fast5_channel_id * info)
 	return 0;
 }
 
-int fast5_raw_read(struct fast5 * f5, int16_t * raw, size_t len)
-{
-	char name[FAST5_OBJ_PATH_MAX];
-	char path[FAST5_OBJ_PATH_MAX];
-	hid_t dataset;  
-	herr_t status;
-	hid_t dataspace_id;
-	hid_t memspace_id;
-	hsize_t dimsm[2];
-	hsize_t count[2];              /* size of subset in the file */
-	hsize_t offset[2];             /* subset offset in the file */
-	hsize_t stride[2];
-	hsize_t block[2];
-	int ret;
-
-	assert(f5 != NULL);
-	assert(f5->file >= 0);
-	assert(raw != NULL);
-
-	if ((ret = fast5_raw_get_name(f5, name)) < 0)
-		return ret;
-
-	snprintf(path, FAST5_OBJ_PATH_MAX, "/Raw/Reads/%s/Signal", name);
-	DBG(DBG_TRACE, "Raw signal: %s", path);
-
-	/* Open an existing dataset. */
-	dataset = H5Dopen2(f5->file, path, H5P_DEFAULT);
-
-	/* Specify size and shape of subset to write. */
-
-	offset[0] = 0;
-	count[0]  = len;
-	stride[0] = 1;
-	block[0] = 1;
-
-	/* Create memory space with size of subset. Get file dataspace
-	   and select subset from file dataspace. */
-
-	dimsm[0] = len;
-	memspace_id = H5Screate_simple(1, dimsm, NULL);
-
-	dataspace_id = H5Dget_space(dataset);
-	H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET, 
-						offset, stride, count, block);
-
-	status = H5Dread(dataset, H5T_NATIVE_SHORT, 
-					 memspace_id, dataspace_id, 
-					 H5P_DEFAULT, raw);
-
-	H5Sclose(memspace_id);
-	H5Sclose(dataspace_id);
-	/* Close the dataset. */
-	H5Dclose(dataset);
-
-	return status;
-}
 
 int fast5_stats(struct fast5 * f5)
 {

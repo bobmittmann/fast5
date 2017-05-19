@@ -60,18 +60,19 @@ struct fast5_channel_id {
 
 /* Raw read info */
 struct fast5_raw {
-	char path[FAST5_OBJ_PATH_MAX + 1];
+	char dataset[FAST5_OBJ_PATH_MAX + 1];
 	uint32_t duration;
 	double median_before;
 	char read_id[FAST5_UUID_MAX + 1];
 	uint32_t read_number;
 	int32_t start_mux;
 	uint64_t start_time;
+	size_t length;
 };
 
 /* Event detection info */
 struct fast5_events_info {
-	char path[FAST5_OBJ_PATH_MAX + 1];
+	char dataset[FAST5_OBJ_PATH_MAX + 1];
 	uint32_t duration;
 	double median_before;
 	char read_id[FAST5_UUID_MAX + 1];
@@ -79,6 +80,15 @@ struct fast5_events_info {
 	int64_t scaling_used;
 	int32_t start_mux;
 	double start_time;
+	size_t length;
+};
+
+struct fast5_event {
+	int64_t start;
+	int64_t length;
+	double mean;
+	double stdv;
+	double variance;
 };
 
 #ifdef __cplusplus
@@ -95,9 +105,12 @@ int fast5_stats(struct fast5 * f5);
 		
 int fast5_raw_read_info(struct fast5 * f5, struct fast5_raw * info);
 
+int fast5_raw_read(struct fast5 * f5, int16_t * raw, size_t len);
+
 int fast5_events_info(struct fast5 * f5, struct fast5_events_info * info);
 
-int fast5_raw_read(struct fast5 * f5, int16_t * raw, size_t len);
+int fast5_events_read(struct fast5 * f5, struct fast5_event * event, 
+					  size_t len);
 
 int fast5_channel_id(struct fast5 * f5, struct fast5_channel_id * info);
 

@@ -49,7 +49,8 @@ void usage(FILE * f, char * prog)
 	fprintf(f, "\n");
 	fprintf(f, "  -?     \tShow this help message\n");
 	fprintf(f, "  -v[v]  \tVerbosity level\n");
-	fprintf(f, "  -d     \tDump\n");
+	fprintf(f, "  -r     \tRaw data dump\n");
+	fprintf(f, "  -e     \tEvents dump\n");
 	fprintf(f, "\n");
 }
 
@@ -73,16 +74,18 @@ int main(int argc,  char **argv)
 	char * path; /* fast5 input file */
 	int c;
 	int16_t * raw;
+	struct fast5_event * event;
 	int cnt;
 	int i;
-	bool dump = false;
+	bool dump_raw = false;
+	bool dump_events = false;
 
 	/* the prog name start just after the last lash */
 	if ((prog = (char *)basename(argv[0])) == NULL)
 		prog = argv[0];
 
 	/* parse the command line options */
-	while ((c = getopt(argc, argv, "V?vd")) > 0) {
+	while ((c = getopt(argc, argv, "V?vre")) > 0) {
 		switch (c) {
 		case 'V':
 			version(prog);
@@ -96,8 +99,12 @@ int main(int argc,  char **argv)
 			verbose++;
 			break;
 
-		case 'd':
-			dump = true;
+		case 'r':
+			dump_raw = true;
+			break;
+
+		case 'e':
+			dump_events = true;
 			break;
 
 		default:
@@ -120,12 +127,12 @@ int main(int argc,  char **argv)
 			return 3;
 		}
 
-	//	fast5_stats(f5);
-	
 		fast5_info(f5, &info);
-		printf("      file_name: %s\n", info.filename); 
-		printf("   file_version: %d.%d\n", info.version.major, 
-			   info.version.minor);
+		if (verbose) {
+			printf("      file_name: %s\n", info.filename); 
+			printf("   file_version: %d.%d\n", info.version.major, 
+				   info.version.minor);
+		}
 
 		if (fast5_channel_id(f5, &channel_id) < 0) {
 			fprintf(stderr, "%s: channel_id error!\n", prog);
@@ -141,21 +148,22 @@ int main(int argc,  char **argv)
 		}
 
 		if (fast5_raw_read_info(f5, &raw_read) < 0) {
-			fprintf(stderr, "%s: raw info error!\n", prog);
+			//fprintf(stderr, "%s: raw info error!\n", prog);
 		} else if (verbose) {
-			printf("    Raw dataset: %s\n", raw_read.path);
+			printf("    Raw dataset: %s\n", raw_read.dataset);
 			printf("       duration: %u\n", raw_read.duration);
 			printf("  median_before: %f\n", raw_read.median_before);
 			printf("        read_id: %s\n", raw_read.read_id);
 			printf("    read_number: %u\n", raw_read.read_number);
 			printf("      start_mux: %d\n", raw_read.start_mux);
 			printf("     start_time: %" PRIu64 "\n", raw_read.start_time);
+			printf("         length: %u\n", (int)raw_read.length);
 		}
 
 		if (fast5_events_info(f5, &events_info) < 0) {
-			fprintf(stderr, "%s: events info error!\n", prog);
+			//fprintf(stderr, "%s: events info error!\n", prog);
 		} else if (verbose) {
-			printf("  Event dataset: %s\n", events_info.path);
+			printf("  Event dataset: %s\n", events_info.dataset);
 			printf("       duration: %u\n", events_info.duration);
 			printf("  median_before: %f\n", events_info.median_before);
 			printf("        read_id: %s\n", events_info.read_id);
@@ -163,22 +171,43 @@ int main(int argc,  char **argv)
 			printf("   scaling_used: %" PRIi64 "\n", events_info.scaling_used);
 			printf("      start_mux: %d\n", events_info.start_mux);
 			printf("     start_time: %f\n", events_info.start_time);
+			printf("         length: %d\n", (int)events_info.length);
 		}
 
-		if (dump) {
-			cnt = raw_read.duration;
-			raw = malloc(cnt*sizeof(int16_t));;
+		if (dump_raw) {
+			if ((cnt = raw_read.length) > 0) {
+				raw = malloc(cnt*sizeof(int16_t));;
 
-			if (fast5_raw_read(f5, raw, cnt) < 0) {
-				fprintf(stderr, "%s: raw data read error!\n", prog);
-				return 3;
+				if (fast5_raw_read(f5, raw, cnt) < 0) {
+					fprintf(stderr, "%s: raw data read error!\n", prog);
+					return 3;
+				} 
+				for (i = 0; i < cnt; ++i) {
+					printf("%d\n", raw[i]);
+				}
+
+				free(raw);
 			}
+		}
 
-			for (i = 0; i < cnt; ++i) {
-				printf("%d\n", raw[i]);
+		if (dump_events) {
+			if ((cnt = events_info.length) > 0) {
+
+				event = malloc(cnt*sizeof(struct fast5_event));;
+
+				if (fast5_events_read(f5, event, cnt) < 0) {
+					fprintf(stderr, "%s: events data read error!\n", prog);
+					return 3;
+				}
+
+				for (i = 0; i < cnt; ++i) {
+					printf("%6" PRIi64 " %3" PRIi64 " %8.3f %6.3f %6.3f\n", 
+						   event[i].start, event[i].length, 
+						   event[i].mean, event[i].stdv, event[i].variance);
+				}
+
+				free(event);
 			}
-
-			free(raw);
 		}
 
 		if (verbose) {
@@ -190,4 +219,5 @@ int main(int argc,  char **argv)
 
 	return 0;
 }
+
 
