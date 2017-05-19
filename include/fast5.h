@@ -32,9 +32,54 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <limits.h>
 
 /* Opaque structures */
 struct fast5;
+
+struct fast5_info {
+	char filename[PATH_MAX];
+	struct {
+		uint16_t major;
+		uint16_t minor;
+	} version;
+};
+
+#define FAST5_CHAN_NUM_MAX 127
+
+struct fast5_channel_id {
+	char channel_number[FAST5_CHAN_NUM_MAX + 1];
+	double digitisation;
+	double offset;
+	double range;
+	double sampling_rate;
+};
+
+#define FAST5_UUID_MAX 63
+#define FAST5_OBJ_PATH_MAX 127
+
+/* Raw read info */
+struct fast5_raw {
+	char path[FAST5_OBJ_PATH_MAX + 1];
+	uint32_t duration;
+	double median_before;
+	char read_id[FAST5_UUID_MAX + 1];
+	uint32_t read_number;
+	int32_t start_mux;
+	uint64_t start_time;
+};
+
+/* Event detection info */
+struct fast5_events_info {
+	char path[FAST5_OBJ_PATH_MAX + 1];
+	uint32_t duration;
+	double median_before;
+	char read_id[FAST5_UUID_MAX + 1];
+	uint32_t read_number;
+	int64_t scaling_used;
+	int32_t start_mux;
+	double start_time;
+};
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,8 +89,18 @@ struct fast5 * fast5_open(const char * path);
 
 int fast5_close(struct fast5 * f5);
 
+int fast5_info(struct fast5 * f5, struct fast5_info * info);
+
 int fast5_stats(struct fast5 * f5);
 		
+int fast5_raw_read_info(struct fast5 * f5, struct fast5_raw * info);
+
+int fast5_events_info(struct fast5 * f5, struct fast5_events_info * info);
+
+int fast5_raw_read(struct fast5 * f5, int16_t * raw, size_t len);
+
+int fast5_channel_id(struct fast5 * f5, struct fast5_channel_id * info);
+
 #ifdef __cplusplus
 }
 #endif

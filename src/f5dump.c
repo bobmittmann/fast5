@@ -35,6 +35,7 @@
 #include <errno.h>
 #include <libgen.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
 #include "config.h"
 #include "fast5.h"
@@ -48,6 +49,7 @@ void usage(FILE * f, char * prog)
 	fprintf(f, "\n");
 	fprintf(f, "  -?     \tShow this help message\n");
 	fprintf(f, "  -v[v]  \tVerbosity level\n");
+	fprintf(f, "  -d     \tDump\n");
 	fprintf(f, "\n");
 }
 
@@ -58,23 +60,29 @@ void version(char * prog)
 	exit(1);
 }
 
-
 int main(int argc,  char **argv)
 {
 	extern char *optarg;	/* getopt */
 	extern int optind;	/* getopt */
 	char * prog;
 	struct fast5 * f5;
-
-	char * filename; /* name of fast5 input file */
+	struct fast5_info info;
+	struct fast5_raw raw_read;
+	struct fast5_events_info events_info;
+	struct fast5_channel_id channel_id;
+	char * path; /* fast5 input file */
 	int c;
+	int16_t * raw;
+	int cnt;
+	int i;
+	bool dump = false;
 
 	/* the prog name start just after the last lash */
 	if ((prog = (char *)basename(argv[0])) == NULL)
 		prog = argv[0];
 
 	/* parse the command line options */
-	while ((c = getopt(argc, argv, "V?v")) > 0) {
+	while ((c = getopt(argc, argv, "V?vd")) > 0) {
 		switch (c) {
 		case 'V':
 			version(prog);
@@ -88,28 +96,97 @@ int main(int argc,  char **argv)
 			verbose++;
 			break;
 
+		case 'd':
+			dump = true;
+			break;
+
 		default:
 			fprintf(stderr, "%s: invalid option %s\n", prog, optarg);
 			return 1;
 		}
 	}
 
-	if (optind != (argc - 1)) {
+	if (optind == argc) {
 		fprintf(stderr, "%s: missing filename.\n\n", prog);
 		usage(stderr, prog);
 		return 2;
 	}
 
-	filename = argv[optind];
+	while (optind < argc) {
+		path = argv[optind++];
 
-	f5 = fast5_open(filename);
+		if ((f5 = fast5_open(path)) == NULL) {
+			fprintf(stderr, "%s: Not a FAST5 file!\n", prog);
+			return 3;
+		}
 
-	fast5_stats(f5);
+	//	fast5_stats(f5);
+	
+		fast5_info(f5, &info);
+		printf("      file_name: %s\n", info.filename); 
+		printf("   file_version: %d.%d\n", info.version.major, 
+			   info.version.minor);
 
-	fast5_close(f5);
+		if (fast5_channel_id(f5, &channel_id) < 0) {
+			fprintf(stderr, "%s: channel_id error!\n", prog);
+			return 3;
+		}
 
-	if (verbose)
-		fprintf(stdout, " - finished without errors.\n");
+		if (verbose) {
+			printf(" channel_number: %s\n", channel_id.channel_number);
+			printf("   digitisation: %f\n", channel_id.digitisation);
+			printf("         offset: %f\n", channel_id.offset);
+			printf("          range: %f\n", channel_id.range);
+			printf("  sampling_rate: %f\n", channel_id.sampling_rate);
+		}
+
+		if (fast5_raw_read_info(f5, &raw_read) < 0) {
+			fprintf(stderr, "%s: raw info error!\n", prog);
+		} else if (verbose) {
+			printf("    Raw dataset: %s\n", raw_read.path);
+			printf("       duration: %u\n", raw_read.duration);
+			printf("  median_before: %f\n", raw_read.median_before);
+			printf("        read_id: %s\n", raw_read.read_id);
+			printf("    read_number: %u\n", raw_read.read_number);
+			printf("      start_mux: %d\n", raw_read.start_mux);
+			printf("     start_time: %" PRIu64 "\n", raw_read.start_time);
+		}
+
+		if (fast5_events_info(f5, &events_info) < 0) {
+			fprintf(stderr, "%s: events info error!\n", prog);
+		} else if (verbose) {
+			printf("  Event dataset: %s\n", events_info.path);
+			printf("       duration: %u\n", events_info.duration);
+			printf("  median_before: %f\n", events_info.median_before);
+			printf("        read_id: %s\n", events_info.read_id);
+			printf("    read_number: %u\n", events_info.read_number);
+			printf("   scaling_used: %" PRIi64 "\n", events_info.scaling_used);
+			printf("      start_mux: %d\n", events_info.start_mux);
+			printf("     start_time: %f\n", events_info.start_time);
+		}
+
+		if (dump) {
+			cnt = raw_read.duration;
+			raw = malloc(cnt*sizeof(int16_t));;
+
+			if (fast5_raw_read(f5, raw, cnt) < 0) {
+				fprintf(stderr, "%s: raw data read error!\n", prog);
+				return 3;
+			}
+
+			for (i = 0; i < cnt; ++i) {
+				printf("%d\n", raw[i]);
+			}
+
+			free(raw);
+		}
+
+		if (verbose) {
+			printf("\n");
+		}
+
+		fast5_close(f5);
+	}
 
 	return 0;
 }
