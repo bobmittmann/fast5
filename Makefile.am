@@ -10,7 +10,8 @@ AM_CPPFLAGS = -I$(top_srcdir)/include
 
 AM_CFLAGS = -O2 -Wall
 
-bin_PROGRAMS = f5dump
+bin_PROGRAMS = f5dump f5vcd
 
 f5dump_SOURCES = src/f5dump.c src/fast5.c
 
+f5vcd_SOURCES = src/f5vcd.c src/fast5.c src/vcd.c

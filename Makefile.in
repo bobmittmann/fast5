@@ -86,7 +86,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = f5dump$(EXEEXT)
+bin_PROGRAMS = f5dump$(EXEEXT) f5vcd$(EXEEXT)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -106,6 +106,10 @@ am__dirstamp = $(am__leading_dot)dirstamp
 am_f5dump_OBJECTS = src/f5dump.$(OBJEXT) src/fast5.$(OBJEXT)
 f5dump_OBJECTS = $(am_f5dump_OBJECTS)
 f5dump_LDADD = $(LDADD)
+am_f5vcd_OBJECTS = src/f5vcd.$(OBJEXT) src/fast5.$(OBJEXT) \
+	src/vcd.$(OBJEXT)
+f5vcd_OBJECTS = $(am_f5vcd_OBJECTS)
+f5vcd_LDADD = $(LDADD)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -134,8 +138,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(f5dump_SOURCES)
-DIST_SOURCES = $(f5dump_SOURCES)
+SOURCES = $(f5dump_SOURCES) $(f5vcd_SOURCES)
+DIST_SOURCES = $(f5dump_SOURCES) $(f5vcd_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -282,6 +286,7 @@ AUTOMAKE_OPTIONS = subdir-objects
 AM_CPPFLAGS = -I$(top_srcdir)/include
 AM_CFLAGS = -O2 -Wall
 f5dump_SOURCES = src/f5dump.c src/fast5.c
+f5vcd_SOURCES = src/f5vcd.c src/fast5.c src/vcd.c
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -390,6 +395,12 @@ src/fast5.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
 f5dump$(EXEEXT): $(f5dump_OBJECTS) $(f5dump_DEPENDENCIES) $(EXTRA_f5dump_DEPENDENCIES) 
 	@rm -f f5dump$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(f5dump_OBJECTS) $(f5dump_LDADD) $(LIBS)
+src/f5vcd.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
+src/vcd.$(OBJEXT): src/$(am__dirstamp) src/$(DEPDIR)/$(am__dirstamp)
+
+f5vcd$(EXEEXT): $(f5vcd_OBJECTS) $(f5vcd_DEPENDENCIES) $(EXTRA_f5vcd_DEPENDENCIES) 
+	@rm -f f5vcd$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(f5vcd_OBJECTS) $(f5vcd_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -399,7 +410,9 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/f5dump.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/f5vcd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/fast5.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/vcd.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
