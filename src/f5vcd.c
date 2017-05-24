@@ -191,15 +191,16 @@ int main(int argc,  char **argv)
 
 		if (dump_raw) {
 			if ((cnt = raw_read.length) > 0) {
+				struct vcd_var * var; 
 				raw = malloc(cnt*sizeof(int16_t));;
 
 				if (fast5_raw_read(f5, raw, cnt) < 0) {
 					fprintf(stderr, "%s: raw data read error!\n", prog);
 					return 3;
 				} 
-				for (i = 0; i < cnt; ++i) {
-					printf("%d\n", raw[i]);
-				}
+
+				var = vcd_var_new(vcd, "raw", channel_id.sampling_rate);
+				vcd_var_append(var, raw, cnt);
 
 				free(raw);
 			}

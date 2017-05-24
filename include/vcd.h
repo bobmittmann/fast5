@@ -50,6 +50,8 @@
 /* Opaque VCD file structure */
 struct vcd;
 
+struct vcd_var;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -57,6 +59,11 @@ extern "C" {
 struct vcd * vcd_create(const char * path, double timescale);
 
 int vcd_close(struct vcd * vcd);
+
+struct vcd_var * vcd_var_new(struct vcd * vcd, const char * name, 
+							 double rate);
+
+int vcd_var_append(struct vcd_var * var, void * data, unsigned int len);
 
 #ifdef __cplusplus
 }

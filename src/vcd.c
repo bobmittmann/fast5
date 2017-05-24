@@ -34,13 +34,32 @@
 #include <time.h>
 #include <math.h>
 #include <inttypes.h>
+#include <string.h>
 
 #include "debug.h"
+
+struct vcd_var
+{
+	uint8_t type;
+	uint8_t sizeoftype;
+	uint8_t pos;
+	char id;
+	char name[30];
+    double period;
+    double start_time;
+	uint32_t length;
+	uint32_t allocsize;
+	void * data;
+};
+
+#define VCD_VAR_MAX 32
 
 struct vcd
 {
 	FILE * f;
 	double timescale;
+	unsigned int cnt;
+	struct vcd_var var[VCD_VAR_MAX];
 };
 
 static const char * const month[] = {
@@ -91,13 +110,98 @@ struct vcd * vcd_create(const char * path, double timescale)
 	ns = round(timescale * 1000000000);
 	fprintf(f, "$timescale %" PRIi64 " ns $end\n", ns);
 
+	fprintf(f, "$scope module top $end\n");
+
 	return vcd;
+}
+
+static const char id_lut[] = {
+	'!',
+	'@',
+	'#',
+	'$',
+	'%',
+	'^',
+	'&',
+	'*',
+	'(',
+	')',
+	'+'
+};
+
+struct vcd_var * vcd_var_new(struct vcd * vcd, const char * name, 
+							 double rate)
+{
+	struct vcd_var * var;
+	int pos;
+
+	pos = vcd->cnt;
+	if (pos >= VCD_VAR_MAX)
+		return NULL;
+
+	vcd->cnt++;
+	var = &vcd->var[pos];
+	var->pos = pos;
+	var->id = id_lut[pos];
+	var->type = 1;
+	var->sizeoftype = 2;
+
+	strcpy(var->name, name);
+	var->period = 1.0/rate;
+	var->start_time = 0.0;
+	var->length = 0;
+	var->allocsize = 0;
+	var->data = NULL;
+
+	return var; 
+}
+
+int vcd_var_append(struct vcd_var * var, void * data, unsigned int len)
+{
+	unsigned int datasize;
+	unsigned int allocsize;
+	void * ptr;
+
+	assert(var != NULL);
+	assert(data != NULL);
+
+	datasize = var->sizeoftype * len;
+
+	if (var->allocsize == 0) {
+		allocsize = datasize;
+		ptr = malloc(allocsize);
+		var->data  = ptr;
+	} else {
+		assert(var->allocsize != 0);
+		allocsize = var->allocsize + datasize;
+		ptr = realloc(var->data, allocsize);
+		var->data  = ptr;
+		ptr += datasize;
+	}
+
+	var->length += len;
+	var->allocsize = allocsize;
+
+	memcpy(ptr, data, datasize);
+
+	return 0;
 }
 
 int vcd_close(struct vcd * vcd)
 {
+	struct vcd_var * var;
+	int i;
+
 	assert(vcd != NULL);
 	assert(vcd->f != NULL);
+
+	for (i = 0; i < vcd->cnt; ++i) {
+		var = &vcd->var[i];
+		if (var->data != NULL) {
+			assert(var->allocsize != 0);
+			free(var->data);
+		}
+	}
 
 	fclose(vcd->f);
 
